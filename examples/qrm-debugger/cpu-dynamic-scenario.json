@@ -1,0 +1,41 @@
+{
+  "topology": {
+    "cpus": 16,
+    "sockets": 2,
+    "numas": 4
+  },
+  "hintSelection": "first-preferred",
+  "initReservePool": true,
+  "initReclaimPool": true,
+  "enableReclaim": false,
+  "enableReclaimNUMABinding": true,
+  "allowSharedCoresOverlapReclaimedCores": false,
+  "reservedReclaimedCPUsSize": 4,
+  "pods": [
+    {
+      "uid": "pod-snb-1",
+      "namespace": "default",
+      "name": "pod-snb-1",
+      "qos": "shared_cores",
+      "numaBinding": true,
+      "containers": [
+        {
+          "name": "main",
+          "cpu": 2
+        }
+      ]
+    },
+    {
+      "uid": "pod-shared-1",
+      "namespace": "default",
+      "name": "pod-shared-1",
+      "qos": "shared_cores",
+      "containers": [
+        {
+          "name": "main",
+          "cpu": 1
+        }
+      ]
+    }
+  ]
+}
