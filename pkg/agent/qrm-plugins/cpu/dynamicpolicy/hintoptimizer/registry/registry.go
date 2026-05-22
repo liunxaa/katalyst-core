@@ -17,6 +17,7 @@ limitations under the License.
 package registry
 
 import (
+	"github.com/kubewharf/katalyst-core/pkg/agent/qrm-plugins/cpu/dynamicpolicy/hintoptimizer/filter/snbthreshold"
 	"github.com/kubewharf/katalyst-core/pkg/agent/qrm-plugins/cpu/dynamicpolicy/hintoptimizer/policy"
 	"github.com/kubewharf/katalyst-core/pkg/agent/qrm-plugins/cpu/dynamicpolicy/hintoptimizer/policy/canonical"
 	"github.com/kubewharf/katalyst-core/pkg/agent/qrm-plugins/cpu/dynamicpolicy/hintoptimizer/policy/memorybandwidth"
@@ -34,4 +35,17 @@ var SharedCoresHintOptimizerRegistry = policy.HintOptimizerRegistry{
 var DedicatedCoresHintOptimizerRegistry = policy.HintOptimizerRegistry{
 	memorybandwidth.HintOptimizerNameMemoryBandwidth: memorybandwidth.NewMemoryBandwidthHintOptimizer,
 	resourcepackage.HintOptimizerNameResourcePackage: resourcepackage.NewResourcePackageHintOptimizer,
+}
+
+// SharedCoresHintFilterNames is the default ordered list of hint filters that
+// the shared_cores numa_binding hint pipeline runs after the optimizer chain.
+// Filters are subtractive and always executed for every successful optimization
+// path, so additional ordering knobs are intentionally not exposed.
+var SharedCoresHintFilterNames = []string{
+	snbthreshold.HintFilterNameSNBCPUTotalRequestThreshold,
+}
+
+// SharedCoresHintFilterRegistry maps filter names to their factories.
+var SharedCoresHintFilterRegistry = policy.HintFilterRegistry{
+	snbthreshold.HintFilterNameSNBCPUTotalRequestThreshold: snbthreshold.NewFromFactoryOptions,
 }

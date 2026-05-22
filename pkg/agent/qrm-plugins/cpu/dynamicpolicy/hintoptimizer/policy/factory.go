@@ -38,6 +38,15 @@ type HintOptimizerFactoryOptions struct {
 	Emitter      metrics.MetricEmitter
 	State        state.State
 	ReservedCPUs machine.CPUSet
+	MachineInfo  *machine.KatalystMachineInfo
+
+	// GetContainerRequestedCores returns the requested cpu cores for a single
+	// allocation. Filters that need to aggregate per-pod requests (e.g. SNB
+	// threshold) consume this callback to stay decoupled from DynamicPolicy.
+	GetContainerRequestedCores state.GetContainerRequestedCoresFunc
+	// SNBCPUTotalRequestThresholdRatio is the per-NUMA SNB+DNB cpu request
+	// threshold ratio. A value <= 0 disables the SNB threshold filter.
+	SNBCPUTotalRequestThresholdRatio float64
 }
 
 type HintOptimizerFactory func(options HintOptimizerFactoryOptions) (hintoptimizer.HintOptimizer, error)
@@ -102,6 +111,70 @@ func (m multiHintOptimizer) Run(stopCh <-chan struct{}) error {
 	for _, optimizer := range m.optimizers {
 		err := optimizer.hintOptimizer.Run(stopCh)
 		if err != nil {
+			errList = append(errList, err)
+		}
+	}
+	return utilerrors.NewAggregate(errList)
+}
+
+type HintFilterFactory func(options HintOptimizerFactoryOptions) (hintoptimizer.HintFilter, error)
+
+type HintFilterRegistry map[string]HintFilterFactory
+
+func (h *HintFilterRegistry) Register(name string, factory HintFilterFactory) {
+	(*h)[name] = factory
+}
+
+// HintFilter constructs a chained HintFilter from the given filter names. Filters
+// are executed in the same order as the slice; an error from any single filter
+// terminates the whole chain.
+func (h *HintFilterRegistry) HintFilter(names []string, options HintOptimizerFactoryOptions) (hintoptimizer.HintFilter, error) {
+	filters := make([]namedHintFilter, 0, len(names))
+	for _, name := range names {
+		f, ok := (*h)[name]
+		if !ok {
+			return nil, fmt.Errorf("hint filter %s not registered", name)
+		}
+
+		filter, err := f(options)
+		if err != nil {
+			return nil, fmt.Errorf("hint filter %s failed with error: %v", name, err)
+		}
+
+		filters = append(filters, namedHintFilter{
+			name:       name,
+			hintFilter: filter,
+		})
+	}
+	return &multiHintFilter{filters: filters}, nil
+}
+
+type namedHintFilter struct {
+	name       string
+	hintFilter hintoptimizer.HintFilter
+}
+
+// multiHintFilter executes a list of HintFilters in registration order. Unlike
+// multiHintOptimizer, all filters are executed (no short-circuit on success);
+// the chain is only aborted when a filter returns a non-nil error.
+type multiHintFilter struct {
+	filters []namedHintFilter
+}
+
+func (m multiHintFilter) Filter(request hintoptimizer.Request, hints *pluginapi.ListOfTopologyHints) error {
+	for _, f := range m.filters {
+		if err := f.hintFilter.Filter(request, hints); err != nil {
+			general.Warningf("hint filter %s rejected hints with error: %v", f.name, err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+func (m multiHintFilter) Run(stopCh <-chan struct{}) error {
+	var errList []error
+	for _, f := range m.filters {
+		if err := f.hintFilter.Run(stopCh); err != nil {
 			errList = append(errList, err)
 		}
 	}

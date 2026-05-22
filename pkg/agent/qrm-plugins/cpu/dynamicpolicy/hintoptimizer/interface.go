@@ -34,6 +34,21 @@ type HintOptimizer interface {
 	Run(stopCh <-chan struct{}) error
 }
 
+// HintFilter performs hard pruning on a candidate hint set after optimization.
+// Unlike HintOptimizer, filters always run (no short-circuit) and only do
+// subtraction (drop hints / abort with error). They never add or reorder hints.
+//
+// A typical filter checks per-NUMA constraints (e.g. SNB CPU total request
+// threshold) and returns ErrNoAvailableCPUHints when no candidate satisfies
+// the constraint.
+type HintFilter interface {
+	// Filter prunes the given list of topology hints based on the current state and request.
+	// It MAY mutate the hints slice in place.
+	Filter(Request, *pluginapi.ListOfTopologyHints) error
+	// Run starts the hint filter.
+	Run(stopCh <-chan struct{}) error
+}
+
 // DummyHintOptimizer is a no-op implementation of HintOptimizer.
 type DummyHintOptimizer struct{}
 
@@ -46,5 +61,20 @@ func (d *DummyHintOptimizer) OptimizeHints(Request, *pluginapi.ListOfTopologyHin
 
 // Run for DummyHintOptimizer does nothing.
 func (d *DummyHintOptimizer) Run(_ <-chan struct{}) error {
+	return nil
+}
+
+// DummyHintFilter is a no-op implementation of HintFilter.
+type DummyHintFilter struct{}
+
+var _ HintFilter = &DummyHintFilter{}
+
+// Filter for DummyHintFilter does nothing and returns nil.
+func (d *DummyHintFilter) Filter(Request, *pluginapi.ListOfTopologyHints) error {
+	return nil
+}
+
+// Run for DummyHintFilter does nothing.
+func (d *DummyHintFilter) Run(_ <-chan struct{}) error {
 	return nil
 }

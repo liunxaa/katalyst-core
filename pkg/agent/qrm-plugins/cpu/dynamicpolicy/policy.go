@@ -149,6 +149,11 @@ type DynamicPolicy struct {
 
 	sharedCoresNUMABindingHintOptimizer    hintoptimizer.HintOptimizer
 	dedicatedCoresNUMABindingHintOptimizer hintoptimizer.HintOptimizer
+
+	// sharedCoresNUMABindingHintFilters runs after the shared_cores numa_binding
+	// hint optimizer chain (and on the in-place resize fast path) to enforce
+	// subtractive constraints such as the SNB cpu total request threshold.
+	sharedCoresNUMABindingHintFilters hintoptimizer.HintFilter
 }
 
 func NewDynamicPolicy(agentCtx *agent.GenericContext, conf *config.Configuration,
@@ -471,6 +476,13 @@ func (p *DynamicPolicy) Start() (err error) {
 	err = p.dedicatedCoresNUMABindingHintOptimizer.Run(p.stopCh)
 	if err != nil {
 		return fmt.Errorf("dedicatedCoresNUMABindingHintOptimizer.Run failed with error: %v", err)
+	}
+
+	if p.sharedCoresNUMABindingHintFilters != nil {
+		err = p.sharedCoresNUMABindingHintFilters.Run(p.stopCh)
+		if err != nil {
+			return fmt.Errorf("sharedCoresNUMABindingHintFilters.Run failed with error: %v", err)
+		}
 	}
 
 	return nil
@@ -1167,16 +1179,25 @@ func (p *DynamicPolicy) initHintOptimizers() error {
 		return fmt.Errorf("DedicatedCoresHintOptimizerRegistry.HintOptimizer failed with error: %v", err)
 	}
 
+	p.sharedCoresNUMABindingHintFilters, err = registry.SharedCoresHintFilterRegistry.HintFilter(registry.SharedCoresHintFilterNames,
+		p.generateHintOptimizerFactoryOptions())
+	if err != nil {
+		return fmt.Errorf("SharedCoresHintFilterRegistry.HintFilter failed with error: %v", err)
+	}
+
 	return nil
 }
 
 func (p *DynamicPolicy) generateHintOptimizerFactoryOptions() policy.HintOptimizerFactoryOptions {
 	return policy.HintOptimizerFactoryOptions{
-		Conf:         p.conf,
-		Emitter:      p.emitter,
-		MetaServer:   p.metaServer,
-		State:        p.state,
-		ReservedCPUs: p.reservedCPUs,
+		Conf:                             p.conf,
+		Emitter:                          p.emitter,
+		MetaServer:                       p.metaServer,
+		State:                            p.state,
+		ReservedCPUs:                     p.reservedCPUs,
+		MachineInfo:                      p.machineInfo,
+		GetContainerRequestedCores:       p.getContainerRequestedCores,
+		SNBCPUTotalRequestThresholdRatio: p.snbCPUTotalRequestThresholdRatio,
 	}
 }
 
